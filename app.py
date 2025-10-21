@@ -1,94 +1,95 @@
-# Advanced Customer Segmentation App (Streamlit)
-# Features: CSV Upload, Multiple Clustering Options, PCA Plot, Segment Summary, PDF Report Export
+# Pro-Level Customer Segmentation App with Streamlit
+# Features: Multi-source data loading, EDA, advanced clustering (KMeans, GMM), PCA, LTV prediction, report export
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+from sklearn.cluster import KMeans
+from sklearn.mixture import GaussianMixture
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import silhouette_score
-import plotly.express as px
-import seaborn as sns
 import matplotlib.pyplot as plt
-import io
-import base64
+import seaborn as sns
+import plotly.express as px
 
-st.set_page_config(page_title="Advanced Customer Segmentation", layout="wide")
-st.title("🧠 Advanced Customer Segmentation App")
+st.set_page_config(page_title="Customer Segmentation Pro", layout="wide")
+st.title("📊 Customer Segmentation & LTV Modeling App")
 
-# --- Upload Data ---
-st.sidebar.header("1. Upload Customer Data")
-uploaded_file = st.sidebar.file_uploader("Upload CSV File", type=["csv"])
-
-# Sample dataset if no file uploaded
-def load_sample_data():
-    np.random.seed(42)
-    return pd.DataFrame({
-        "frequency": np.random.poisson(3, 500),
-        "avg_order_value": np.random.normal(25, 8, 500),
-        "loyalty_score": np.random.uniform(0, 1, 500),
-        "engagement_score": np.random.normal(0.5, 0.2, 500)
-    })
+# --- Upload or Generate Data ---
+st.sidebar.header("Upload or Use Sample Data")
+uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
-    st.success("✅ File uploaded successfully.")
+    st.success("✅ Custom data uploaded.")
 else:
-    st.sidebar.info("Using sample dataset")
-    df = load_sample_data()
+    st.info("Using sample dataset for demonstration.")
+    np.random.seed(42)
+    df = pd.DataFrame({
+        "CustomerID": range(1, 501),
+        "Frequency": np.random.poisson(4, 500),
+        "AvgSpend": np.random.normal(35, 10, 500).round(2),
+        "Recency": np.random.randint(1, 90, 500),
+        "Engagement": np.random.beta(2, 5, 500).round(2),
+        "LoyaltyTier": np.random.choice(["Bronze", "Silver", "Gold", "Platinum"], 500, p=[0.3, 0.4, 0.2, 0.1]),
+        "ChurnRisk": np.random.rand(500).round(2),
+        "LTV": np.random.normal(400, 150, 500).round(2)
+    })
 
-st.subheader("📊 Data Preview")
+# Show Preview
+st.subheader("🔍 Raw Data Preview")
 st.dataframe(df.head())
 
 # --- Preprocessing ---
-X = df.select_dtypes(include=np.number)
+df_encoded = pd.get_dummies(df, columns=["LoyaltyTier"], drop_first=True)
+features = df_encoded.drop(columns=["CustomerID", "LTV"])
 scaler = StandardScaler()
-X_scaled = scaler.fit_transform(X)
+X_scaled = scaler.fit_transform(features)
 
 # --- Clustering ---
-st.sidebar.header("2. Choose Clustering Method")
-method = st.sidebar.selectbox("Clustering Algorithm", ["KMeans", "DBSCAN", "Agglomerative"])
+st.sidebar.header("Clustering Settings")
+cluster_method = st.sidebar.radio("Clustering Algorithm", ["KMeans", "Gaussian Mixture"])
+n_clusters = st.sidebar.slider("Number of Clusters", 2, 10, 4)
 
-if method == "KMeans":
-    n_clusters = st.sidebar.slider("Number of Clusters", 2, 10, 5)
+if cluster_method == "KMeans":
     model = KMeans(n_clusters=n_clusters, random_state=42)
-elif method == "DBSCAN":
-    eps = st.sidebar.slider("EPS (Neighborhood Radius)", 0.1, 3.0, 0.5)
-    min_samples = st.sidebar.slider("Min Samples", 2, 10, 5)
-    model = DBSCAN(eps=eps, min_samples=min_samples)
-elif method == "Agglomerative":
-    n_clusters = st.sidebar.slider("Number of Clusters", 2, 10, 5)
-    model = AgglomerativeClustering(n_clusters=n_clusters)
+else:
+    model = GaussianMixture(n_components=n_clusters, random_state=42)
 
-clusters = model.fit_predict(X_scaled)
-df["Segment"] = clusters
+labels = model.fit_predict(X_scaled)
+df["Segment"] = labels
 
 # --- PCA Plot ---
 pca = PCA(n_components=2)
-pca_components = pca.fit_transform(X_scaled)
-df_pca = pd.DataFrame(pca_components, columns=["PC1", "PC2"])
-df_pca["Segment"] = clusters
+components = pca.fit_transform(X_scaled)
+pca_df = pd.DataFrame(components, columns=["PC1", "PC2"])
+pca_df["Segment"] = labels
 
 st.subheader("🧬 Cluster Visualization (PCA)")
-fig = px.scatter(df_pca, x="PC1", y="PC2", color=df_pca["Segment"].astype(str), title="Customer Segments (PCA)", opacity=0.7)
+fig = px.scatter(pca_df, x="PC1", y="PC2", color=pca_df["Segment"].astype(str), title="Segment Clusters")
 st.plotly_chart(fig, use_container_width=True)
 
-# --- Segment Summary ---
+# --- Segment Profile Summary ---
 st.subheader("📌 Segment Profiles")
-summary = df.groupby("Segment").agg(["mean", "count"])
-st.dataframe(summary)
+st.dataframe(df.groupby("Segment").agg({"Frequency":"mean", "AvgSpend":"mean", "Recency":"mean", "Engagement":"mean", "ChurnRisk":"mean", "LTV":"mean"}).round(2))
 
-# --- Heatmap ---
+# --- Segment Heatmap ---
 st.subheader("🔥 Segment Heatmap")
-heat_data = df.groupby("Segment").mean(numeric_only=True)
 fig, ax = plt.subplots()
-sns.heatmap(heat_data, annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
+sns.heatmap(df.groupby("Segment").mean(numeric_only=True), cmap="YlGnBu", annot=True, fmt=".1f", ax=ax)
 st.pyplot(fig)
 
-# --- Download Report (CSV for now) ---
-st.sidebar.header("3. Export")
-buf = io.BytesIO()
-df.to_csv(buf, index=False)
-buf.seek(0)
-st.sidebar.download_button("Download Segmented Data", data=buf, file_name="segmented_customers.csv", mime="text/csv")
+# --- LTV Modeling ---
+st.subheader("📈 Predictive Modeling: LTV")
+X_ltv = df_encoded.drop(columns=["CustomerID", "LTV"])
+y_ltv = df_encoded["LTV"]
+model_ltv = LinearRegression()
+model_ltv.fit(X_ltv, y_ltv)
+df["LTV_Predicted"] = model_ltv.predict(X_ltv).round(2)
+st.dataframe(df[["CustomerID", "Segment", "LTV", "LTV_Predicted"]].head())
+
+# --- Export ---
+st.sidebar.header("Download Results")
+st.sidebar.download_button("📥 Download CSV", data=df.to_csv(index=False).encode(), file_name="customer_segments_ltv.csv", mime="text/csv")
