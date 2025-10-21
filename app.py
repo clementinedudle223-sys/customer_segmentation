@@ -1,60 +1,94 @@
+# Advanced Customer Segmentation App (Streamlit)
+# Features: CSV Upload, Multiple Clustering Options, PCA Plot, Segment Summary, PDF Report Export
 
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import numpy as np
 from sklearn.preprocessing import StandardScaler
-from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+from sklearn.metrics import silhouette_score
+import plotly.express as px
+import seaborn as sns
+import matplotlib.pyplot as plt
+import io
+import base64
 
-st.set_page_config(page_title="Customer Segmentation Demo", layout="wide")
+st.set_page_config(page_title="Advanced Customer Segmentation", layout="wide")
+st.title("🧠 Advanced Customer Segmentation App")
 
-st.title("🔍 Customer Segmentation – Mock Demo")
-st.markdown("This is a mock segmentation project for a fictional meal delivery company. The app demonstrates how to use clustering to identify key customer personas.")
+# --- Upload Data ---
+st.sidebar.header("1. Upload Customer Data")
+uploaded_file = st.sidebar.file_uploader("Upload CSV File", type=["csv"])
 
-# Load data
-@st.cache_data
-def load_data():
-    return pd.read_csv("mock_customer_data.csv")
+# Sample dataset if no file uploaded
+def load_sample_data():
+    np.random.seed(42)
+    return pd.DataFrame({
+        "frequency": np.random.poisson(3, 500),
+        "avg_order_value": np.random.normal(25, 8, 500),
+        "loyalty_score": np.random.uniform(0, 1, 500),
+        "engagement_score": np.random.normal(0.5, 0.2, 500)
+    })
 
-df = load_data()
-st.subheader("📊 Raw Customer Data")
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.success("✅ File uploaded successfully.")
+else:
+    st.sidebar.info("Using sample dataset")
+    df = load_sample_data()
+
+st.subheader("📊 Data Preview")
 st.dataframe(df.head())
 
-# Preprocessing
-features = ['purchase_frequency', 'avg_order_value', 'loyalty_score', 'engagement_score']
+# --- Preprocessing ---
+X = df.select_dtypes(include=np.number)
 scaler = StandardScaler()
-X_scaled = scaler.fit_transform(df[features])
+X_scaled = scaler.fit_transform(X)
 
-# Clustering
-kmeans = KMeans(n_clusters=5, random_state=42)
-df['cluster'] = kmeans.fit_predict(X_scaled)
+# --- Clustering ---
+st.sidebar.header("2. Choose Clustering Method")
+method = st.sidebar.selectbox("Clustering Algorithm", ["KMeans", "DBSCAN", "Agglomerative"])
 
-# Cluster profiles
-cluster_summary = df.groupby('cluster')[features].mean()
+if method == "KMeans":
+    n_clusters = st.sidebar.slider("Number of Clusters", 2, 10, 5)
+    model = KMeans(n_clusters=n_clusters, random_state=42)
+elif method == "DBSCAN":
+    eps = st.sidebar.slider("EPS (Neighborhood Radius)", 0.1, 3.0, 0.5)
+    min_samples = st.sidebar.slider("Min Samples", 2, 10, 5)
+    model = DBSCAN(eps=eps, min_samples=min_samples)
+elif method == "Agglomerative":
+    n_clusters = st.sidebar.slider("Number of Clusters", 2, 10, 5)
+    model = AgglomerativeClustering(n_clusters=n_clusters)
 
-st.subheader("🧠 Cluster Profiles")
-st.dataframe(cluster_summary)
+clusters = model.fit_predict(X_scaled)
+df["Segment"] = clusters
 
-# Visualizations
-st.subheader("📈 Visualizations")
+# --- PCA Plot ---
+pca = PCA(n_components=2)
+pca_components = pca.fit_transform(X_scaled)
+df_pca = pd.DataFrame(pca_components, columns=["PC1", "PC2"])
+df_pca["Segment"] = clusters
 
-col1, col2 = st.columns(2)
+st.subheader("🧬 Cluster Visualization (PCA)")
+fig = px.scatter(df_pca, x="PC1", y="PC2", color=df_pca["Segment"].astype(str), title="Customer Segments (PCA)", opacity=0.7)
+st.plotly_chart(fig, use_container_width=True)
 
-with col1:
-    st.image("elbow_plot.png", caption="Elbow Plot: Optimal Number of Clusters")
+# --- Segment Summary ---
+st.subheader("📌 Segment Profiles")
+summary = df.groupby("Segment").agg(["mean", "count"])
+st.dataframe(summary)
 
-with col2:
-    st.image("cluster_heatmap.png", caption="Cluster Profile Heatmap")
+# --- Heatmap ---
+st.subheader("🔥 Segment Heatmap")
+heat_data = df.groupby("Segment").mean(numeric_only=True)
+fig, ax = plt.subplots()
+sns.heatmap(heat_data, annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
+st.pyplot(fig)
 
-# Segment labels (mock interpretation)
-st.subheader("💡 Segment Descriptions")
-segments = {
-    0: "Loyal Lifers – Frequent buyers, high loyalty, strong referrals",
-    1: "Health Hackers – Fitness-focused meals, highly engaged online",
-    2: "Weekend Treaters – High spenders on weekends",
-    3: "Deal Seekers – Promo-heavy usage, low retention",
-    4: "One-and-Done – Tried once, didn’t return"
-}
-
-for cluster_id, desc in segments.items():
-    st.markdown(f"**Cluster {cluster_id}:** {desc}")
+# --- Download Report (CSV for now) ---
+st.sidebar.header("3. Export")
+buf = io.BytesIO()
+df.to_csv(buf, index=False)
+buf.seek(0)
+st.sidebar.download_button("Download Segmented Data", data=buf, file_name="segmented_customers.csv", mime="text/csv")
