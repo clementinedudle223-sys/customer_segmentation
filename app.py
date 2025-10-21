@@ -1,5 +1,5 @@
 # Pro-Level Customer Segmentation App with Streamlit
-# Features: Multi-source data loading, EDA, advanced clustering (KMeans, GMM), PCA, LTV prediction, report export
+# Includes: CSV upload, EDA, advanced clustering, LTV prediction, cluster summaries, visualizations, and interactivity
 
 import streamlit as st
 import pandas as pd
@@ -18,7 +18,7 @@ st.set_page_config(page_title="Customer Segmentation Pro", layout="wide")
 st.title("📊 Customer Segmentation & LTV Modeling App")
 
 # --- Upload or Generate Data ---
-st.sidebar.header("Upload or Use Sample Data")
+st.sidebar.header("📁 Upload or Use Sample Data")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
 if uploaded_file is not None:
@@ -42,6 +42,16 @@ else:
 st.subheader("🔍 Raw Data Preview")
 st.dataframe(df.head())
 
+# --- EDA Panel ---
+st.sidebar.header("🔍 EDA")
+if st.sidebar.checkbox("Show Summary Stats"):
+    st.subheader("📊 Summary Statistics")
+    st.write(df.describe())
+
+if st.sidebar.checkbox("Show Null Values"):
+    st.subheader("🚫 Missing Values")
+    st.write(df.isnull().sum())
+
 # --- Preprocessing ---
 df_encoded = pd.get_dummies(df, columns=["LoyaltyTier"], drop_first=True)
 features = df_encoded.drop(columns=["CustomerID", "LTV"])
@@ -49,7 +59,7 @@ scaler = StandardScaler()
 X_scaled = scaler.fit_transform(features)
 
 # --- Clustering ---
-st.sidebar.header("Clustering Settings")
+st.sidebar.header("🧠 Clustering Settings")
 cluster_method = st.sidebar.radio("Clustering Algorithm", ["KMeans", "Gaussian Mixture"])
 n_clusters = st.sidebar.slider("Number of Clusters", 2, 10, 4)
 
@@ -60,6 +70,10 @@ else:
 
 labels = model.fit_predict(X_scaled)
 df["Segment"] = labels
+
+# --- Silhouette Score ---
+sil_score = silhouette_score(X_scaled, labels)
+st.sidebar.metric("Silhouette Score", f"{sil_score:.3f}")
 
 # --- PCA Plot ---
 pca = PCA(n_components=2)
@@ -90,6 +104,6 @@ model_ltv.fit(X_ltv, y_ltv)
 df["LTV_Predicted"] = model_ltv.predict(X_ltv).round(2)
 st.dataframe(df[["CustomerID", "Segment", "LTV", "LTV_Predicted"]].head())
 
-# --- Export ---
-st.sidebar.header("Download Results")
-st.sidebar.download_button("📥 Download CSV", data=df.to_csv(index=False).encode(), file_name="customer_segments_ltv.csv", mime="text/csv")
+# --- Download Results ---
+st.sidebar.header("📥 Export")
+st.sidebar.download_button("Download CSV", data=df.to_csv(index=False).encode(), file_name="customer_segments_ltv.csv", mime="text/csv")
