@@ -14,7 +14,7 @@ import plotly.express as px
 st.set_page_config(page_title="Customer Segmentation Pro", layout="wide")
 st.title("📊 Customer Segmentation & LTV Modeling App")
 
-# --- Upload or Generate Data ---
+# --- Upload or Sample ---
 st.sidebar.header("📁 Upload or Use Sample Data")
 uploaded_file = st.sidebar.file_uploader("Upload CSV", type=["csv"])
 
@@ -25,7 +25,7 @@ else:
     st.info("Using sample dataset for demonstration.")
     np.random.seed(42)
     df = pd.DataFrame({
-        "CustomerID": range(1, 501),
+        "CustomerID": range(1001, 1501),
         "Frequency": np.random.poisson(4, 500),
         "AvgSpend": np.random.normal(35, 10, 500).round(2),
         "Recency": np.random.randint(1, 90, 500),
@@ -35,11 +35,15 @@ else:
         "LTV": np.random.normal(400, 150, 500).round(2)
     })
 
-# Show Preview
+# --- Standardize ID format ---
+if "CustomerID" in df.columns:
+    df["CustomerID"] = df["CustomerID"].astype(str)
+
+# --- Preview ---
 st.subheader("🔍 Raw Data Preview")
 st.dataframe(df.head())
 
-# --- EDA Panel ---
+# --- EDA ---
 st.sidebar.header("🔍 EDA")
 if st.sidebar.checkbox("Show Summary Stats"):
     st.subheader("📊 Summary Statistics")
@@ -49,17 +53,16 @@ if st.sidebar.checkbox("Show Null Values"):
     st.subheader("🚫 Missing Values")
     st.write(df.isnull().sum())
 
-# --- Dynamic Preprocessing ---
+# --- Preprocessing ---
 categorical_cols = df.select_dtypes(include=["object", "category"]).columns
+categorical_cols = [col for col in categorical_cols if col not in ["CustomerID"]]
+
 if len(categorical_cols) > 0:
     df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
 else:
     df_encoded = df.copy()
 
-# Drop optional ID or target columns if present
 features = df_encoded.drop(columns=["CustomerID", "LTV"], errors="ignore")
-
-# Scale numerical data
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(features)
 
@@ -80,7 +83,7 @@ df["Segment"] = labels
 sil_score = silhouette_score(X_scaled, labels)
 st.sidebar.metric("Silhouette Score", f"{sil_score:.3f}")
 
-# --- PCA Plot ---
+# --- PCA Visualization ---
 pca = PCA(n_components=2)
 components = pca.fit_transform(X_scaled)
 pca_df = pd.DataFrame(components, columns=["PC1", "PC2"])
@@ -90,14 +93,15 @@ st.subheader("🧬 Cluster Visualization (PCA)")
 fig = px.scatter(pca_df, x="PC1", y="PC2", color=pca_df["Segment"].astype(str), title="Segment Clusters")
 st.plotly_chart(fig, use_container_width=True)
 
-# --- Segment Profile Summary ---
+# --- Segment Profiles ---
 st.subheader("📌 Segment Profiles")
-st.dataframe(df.groupby("Segment").mean(numeric_only=True).round(2))
+numeric_cols = df.select_dtypes(include=[np.number]).columns.drop(["LTV"], errors='ignore')
+st.dataframe(df.groupby("Segment")[numeric_cols].mean().round(2))
 
 # --- Segment Heatmap ---
 st.subheader("🔥 Segment Heatmap")
 fig, ax = plt.subplots()
-sns.heatmap(df.groupby("Segment").mean(numeric_only=True), cmap="YlGnBu", annot=True, fmt=".1f", ax=ax)
+sns.heatmap(df.groupby("Segment")[numeric_cols].mean(), cmap="YlGnBu", annot=True, fmt=".1f", ax=ax)
 st.pyplot(fig)
 
 # --- LTV Modeling ---
@@ -110,6 +114,6 @@ if "LTV" in df.columns:
     df["LTV_Predicted"] = model_ltv.predict(X_ltv).round(2)
     st.dataframe(df[["CustomerID", "Segment", "LTV", "LTV_Predicted"]].head())
 
-# --- Download Results ---
+# --- Export ---
 st.sidebar.header("📥 Export")
 st.sidebar.download_button("Download CSV", data=df.to_csv(index=False).encode(), file_name="customer_segments_ltv.csv", mime="text/csv")
