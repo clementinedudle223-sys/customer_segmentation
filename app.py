@@ -1,6 +1,3 @@
-# Pro-Level Customer Segmentation App with Streamlit
-# Includes: CSV upload, EDA, advanced clustering, LTV prediction, cluster summaries, visualizations, and interactivity
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -52,13 +49,17 @@ if st.sidebar.checkbox("Show Null Values"):
     st.subheader("🚫 Missing Values")
     st.write(df.isnull().sum())
 
-# --- Preprocessing ---
-if "LoyaltyTier" in df.columns:
-    df_encoded = pd.get_dummies(df, columns=["LoyaltyTier"], drop_first=True)
+# --- Dynamic Preprocessing ---
+categorical_cols = df.select_dtypes(include=["object", "category"]).columns
+if len(categorical_cols) > 0:
+    df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
 else:
     df_encoded = df.copy()
 
-features = df_encoded.drop(columns=["CustomerID", "LTV"])
+# Drop optional ID or target columns if present
+features = df_encoded.drop(columns=["CustomerID", "LTV"], errors="ignore")
+
+# Scale numerical data
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(features)
 
@@ -91,7 +92,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 # --- Segment Profile Summary ---
 st.subheader("📌 Segment Profiles")
-st.dataframe(df.groupby("Segment").agg({"Frequency":"mean", "AvgSpend":"mean", "Recency":"mean", "Engagement":"mean", "ChurnRisk":"mean", "LTV":"mean"}).round(2))
+st.dataframe(df.groupby("Segment").mean(numeric_only=True).round(2))
 
 # --- Segment Heatmap ---
 st.subheader("🔥 Segment Heatmap")
@@ -100,13 +101,14 @@ sns.heatmap(df.groupby("Segment").mean(numeric_only=True), cmap="YlGnBu", annot=
 st.pyplot(fig)
 
 # --- LTV Modeling ---
-st.subheader("📈 Predictive Modeling: LTV")
-X_ltv = df_encoded.drop(columns=["CustomerID", "LTV"])
-y_ltv = df_encoded["LTV"]
-model_ltv = LinearRegression()
-model_ltv.fit(X_ltv, y_ltv)
-df["LTV_Predicted"] = model_ltv.predict(X_ltv).round(2)
-st.dataframe(df[["CustomerID", "Segment", "LTV", "LTV_Predicted"]].head())
+if "LTV" in df.columns:
+    st.subheader("📈 Predictive Modeling: LTV")
+    X_ltv = df_encoded.drop(columns=["CustomerID", "LTV"], errors="ignore")
+    y_ltv = df_encoded["LTV"]
+    model_ltv = LinearRegression()
+    model_ltv.fit(X_ltv, y_ltv)
+    df["LTV_Predicted"] = model_ltv.predict(X_ltv).round(2)
+    st.dataframe(df[["CustomerID", "Segment", "LTV", "LTV_Predicted"]].head())
 
 # --- Download Results ---
 st.sidebar.header("📥 Export")
