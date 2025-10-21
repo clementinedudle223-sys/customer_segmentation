@@ -53,7 +53,11 @@ if st.sidebar.checkbox("Show Null Values"):
     st.write(df.isnull().sum())
 
 # --- Preprocessing ---
-df_encoded = pd.get_dummies(df, columns=["LoyaltyTier"], drop_first=True)
+if "LoyaltyTier" in df.columns:
+    df_encoded = pd.get_dummies(df, columns=["LoyaltyTier"], drop_first=True)
+else:
+    df_encoded = df.copy()
+
 features = df_encoded.drop(columns=["CustomerID", "LTV"])
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(features)
